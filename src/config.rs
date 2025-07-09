@@ -103,8 +103,10 @@ macro_rules! __config_field {
 /// - `$static_name`: The name of the static `OnceLock`
 /// - A list of tuples: `(field_name, field_type, default_value)`
 ///
-/// **Note:** Getter methods return `&'static` references. Use `*value` or `.as_str()`
-/// when interacting with them.
+/// **Note:**
+/// - Getter methods return `&'static` references. Use `*value` or `.as_str()` when interacting with them.
+/// - If `.from_hashmap()` is called more than once, only the **first** call will initialize the configuration.
+///   Subsequent calls will have no effect.
 ///
 /// # Example
 /// ```rust
@@ -139,7 +141,7 @@ macro_rules! config_generator {
 
     static $static_name: std::sync::OnceLock<$object> = std::sync::OnceLock::new();
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct $object {
         $(pub $field: $type),*
     }
@@ -161,6 +163,9 @@ macro_rules! config_generator {
                 let $field: $type = $crate::__config_field!(hash, $field, $default, $type);
             )*
 
+            if $static_name.get().is_some() {
+                return Self::get()
+            }
             Self::new($( $field ),*)
         }
 
