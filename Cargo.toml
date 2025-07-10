@@ -1,6 +1,16 @@
 [package]
 name = "macro_keeper"
-version = "0.1.0"
-edition = "2024"
+version = "0.0.1"
+edition = "2021"
+authors = ["EnvKeeper Team <support@envkeeper.com>"]
+description = "A lightweight macro toolkit for generating statically typed configs and utilities"
+license = "Apache-2.0"
+repository = "https://github.com/envkeeper/macro_keeper"
+readme = "README.md"
+keywords = ["macro", "config", "static"]
+categories = ["development-tools", "macros"]
+
+[lib]
+proc-macro = false
 
 [dependencies]
