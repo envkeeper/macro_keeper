@@ -8,7 +8,7 @@ license = "Apache-2.0"
 repository = "https://github.com/envkeeper/macro_keeper"
 readme = "README.md"
 keywords = ["macro", "config", "static"]
-categories = ["development-tools", "macros"]
+categories = ["development-tools"]
 
 [lib]
 proc-macro = false
