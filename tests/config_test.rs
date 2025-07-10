@@ -151,10 +151,16 @@ mod config_test {
             ]
         );
 
-        let init1 = AppConfigTest4::from_hashmap(Some(HashMap::from([("log_level".to_string(), "Debug".to_string())])));
+        let init1 = AppConfigTest4::from_hashmap(Some(HashMap::from([(
+            "log_level".to_string(),
+            "Debug".to_string(),
+        )])));
 
         // This should panic because the config is already initialized
-        let init2 = AppConfigTest4::from_hashmap(Some(HashMap::from([("log_level".to_string(), "Info".to_string())])));
+        let init2 = AppConfigTest4::from_hashmap(Some(HashMap::from([(
+            "log_level".to_string(),
+            "Info".to_string(),
+        )])));
 
         assert_eq!(init1, init2);
         assert_eq!(*AppConfigTest4::log_level(), LogLevel::Debug);

@@ -1,34 +1,10 @@
 /// Generates static getter methods for each config field defined in a struct.
 ///
-/// This macro is intended to be used internally by `config_generator!`.
-/// Each generated getter method returns a reference to the corresponding field.
+/// This macro is used internally by [`config_generator!`] to expose typed access
+/// to configuration fields.
 ///
-/// # Example Output
-/// For input:
-/// ```rust
-/// __config_ref_getters! {
-///     (log_level, &'static LogLevel),
-///     (buffer_capacity, &'static usize),
-/// }
-/// ```
-///
-/// The following methods will be generated:
-/// ```rust
-/// pub fn log_level() -> &'static LogLevel { ... }
-/// pub fn buffer_capacity() -> &'static usize { ... }
-/// ```
-///
-/// The following methods will be generated:
-/// ```rust
-/// pub fn log_level() -> &'static LogLevel {
-///     let config = Self::get();
-///     &config.log_level
-/// }
-/// pub fn buffer_capacity() -> &'static usize {
-///     let config = Self::get();
-///     &config.buffer_capacity
-/// }
-/// ```
+/// Each generated method returns a `&'static` reference to its corresponding field,
+/// so you'll typically want to use `.clone()`, `.as_str()`, or `*value` when needed.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __config_ref_getters {
@@ -44,34 +20,12 @@ macro_rules! __config_ref_getters {
 
 /// Extracts a typed field from a `HashMap<String, String>` with a fallback default.
 ///
-/// Used internally by `config_generator!` to parse config values from strings.
-/// Supports both generic types and `String` specifically.
+/// This macro is used internally by [`config_generator!`] during the `.from_hashmap()`
+/// process to parse and assign values to each field based on its type.
 ///
-/// # Match Arms
-/// - For `String` types, it clones the value.
-/// - For other types, it tries to `parse()` them from the string value.
-///
-/// # Example
-/// ```rust
-/// let my_string: String = __config_field!(map, some_key, "default".to_string(), String);
-/// let my_number: usize = __config_field!(map, size, 100, usize);
-/// let my_enum: SomeEnumType = __config_field!(map, enum_key, SomeEnumType::default(), SomeEnumType);
-/// ```
-/// The fllowing code will be generated:
-/// ```rust
-/// let my_string: String = map
-///     .get("some_key")
-///     .cloned()
-///     .unwrap_or("default".to_string());
-/// let my_number: usize = map
-///     .get("size")
-///     .and_then(|s| s.parse::<usize>().ok())
-///     .unwrap_or(100);
-/// let my_enum: SomeEnumType = map
-///     .get("enum_key")
-///     .and_then(|s| s.parse::<SomeEnumType>().ok())
-///     .unwrap_or(SomeEnumType::default());
-/// ```
+/// # Behavior
+/// - For `String` types, it clones the value from the map.
+/// - For other types, it attempts to parse the value using `.parse()`.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __config_field {
@@ -89,28 +43,45 @@ macro_rules! __config_field {
 
 /// Generates a reusable static configuration struct with default values and typed getters.
 ///
-/// This macro allows you to define a global, lazily-initialized config object
-/// that is accessible across your codebase without explicit parameter passing.
-///
-/// It creates:
-/// - A `struct` with public fields
-/// - A `static OnceLock` to store the configuration
-/// - A `.from_hashmap()` initializer to populate it from environment/config maps
-/// - Typed `&'static` getter methods for each field
+/// This macro creates a global, lazily-initialized config object stored inside a `OnceLock`,
+/// backed by a struct with typed fields and convenient static accessors.
 ///
 /// # Parameters
-/// - `$object`: The name of the struct
-/// - `$static_name`: The name of the static `OnceLock`
-/// - A list of tuples: `(field_name, field_type, default_value)`
+/// - `$object`: Name of the struct (e.g., `AppConfig`)
+/// - `$static_name`: Name of the `OnceLock` holding the config (e.g., `CONFIG`)
+/// - Field list: A list of `(field_name, field_type, default_value)` tuples
 ///
-/// **Note:**
-/// - Getter methods return `&'static` references. Use `*value` or `.as_str()` when interacting with them.
-/// - If `.from_hashmap()` is called more than once, only the **first** call will initialize the configuration.
-///   Subsequent calls will have no effect.
+/// # Features
+/// - Strong typing for each config key
+/// - Global access via static getters
+/// - One-time initialization from `HashMap<String, String>`
+/// - Safe fallback to defaults if a key is missing
+///
+/// # Notes
+/// - Only the **first** call to `.from_hashmap()` initializes the config.
+/// - Getter methods return `&'static` references. Use `.clone()`, `.as_str()`, or deref `*value` when needed.
 ///
 /// # Example
 /// ```rust
 /// use std::collections::HashMap;
+/// use macro_keeper::config_generator;
+///
+/// #[derive(PartialEq, Clone, Debug)]
+/// enum LogLevel {
+///     Debug,
+///     Info,
+/// }
+///
+/// impl std::str::FromStr for LogLevel {
+///     type Err = String;
+///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+///         match s {
+///             "Debug" => Ok(LogLevel::Debug),
+///             "Info" => Ok(LogLevel::Info),
+///             _ => Err("Invalid log level".to_string()),
+///         }
+///     }
+/// }
 ///
 /// config_generator!(
 ///     AppConfig,
@@ -127,9 +98,9 @@ macro_rules! __config_field {
 /// AppConfig::from_hashmap(Some(map));
 ///
 /// // Accessing values
-/// let level = AppConfig::log_level();           // &'static LogLevel => LogLevel::Info
-/// let capacity = AppConfig::buffer_capacity();  // &'static usize => 1024
-/// let env = AppConfig::environment();           // &'static String => "development"
+/// let level = AppConfig::log_level();           // &'static LogLevel
+/// let capacity = AppConfig::buffer_capacity();  // &'static usize
+/// let env = AppConfig::environment();           // &'static String
 ///
 /// // Interacting with values
 /// let double = *capacity * 2;                   // 2048
@@ -137,47 +108,58 @@ macro_rules! __config_field {
 /// ```
 #[macro_export]
 macro_rules! config_generator {
-  ($object:ident, $static_name:ident, [$(($field:ident, $type:ty, $default:expr)), * $(,)?]) => {
+    ($object:ident, $static_name:ident, [$(($field:ident, $type:ty, $default:expr)),* $(,)?]) => {
+        static $static_name: std::sync::OnceLock<$object> = std::sync::OnceLock::new();
 
-    static $static_name: std::sync::OnceLock<$object> = std::sync::OnceLock::new();
-
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct $object {
-        $(pub $field: $type),*
-    }
-
-    impl $object {
-        fn get() -> &'static $object {
-            $static_name.get().expect("Config not initialized. Did you forget to call from_hashmap()?")
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct $object {
+            $(pub $field: $type),*
         }
 
-        fn new($( $field: $type ),*) -> &'static $object {
-            let tmp_config = Self { $( $field ),* };
-            $static_name.set(tmp_config).expect("Config already initialized.");
-            Self::get()
-        }
-
-        pub fn from_hashmap(hash: Option<std::collections::HashMap<String, String>>) -> &'static $object {
-            let hash = hash.unwrap_or_default();
-            $(
-                let $field: $type = $crate::__config_field!(hash, $field, $default, $type);
-            )*
-
-            if $static_name.get().is_some() {
-                return Self::get()
+        impl $object {
+            fn get() -> &'static $object {
+                $static_name.get().expect("Config not initialized. Did you forget to call from_hashmap()?")
             }
-            Self::new($( $field ),*)
+
+            #[allow(clippy::too_many_arguments)]
+            fn new($( $field: $type ),*) -> &'static $object {
+                let tmp_config = Self { $( $field ),* };
+                $static_name.set(tmp_config).expect("Config already initialized.");
+                Self::get()
+            }
+
+            /// Initializes the global config with optional overrides.
+            ///
+            /// This method can only be called once. Any further calls will return
+            /// the already-initialized config.
+            ///
+            /// # Arguments
+            /// - `hash`: An optional `HashMap<String, String>` with override values.
+            ///
+            /// # Returns
+            /// - A reference to the global config
+            pub fn from_hashmap(hash: Option<std::collections::HashMap<String, String>>) -> &'static $object {
+                let hash = hash.unwrap_or_default();
+                $(
+                    let $field: $type = $crate::__config_field!(hash, $field, $default, $type);
+                )*
+
+                if $static_name.get().is_some() {
+                    return Self::get()
+                }
+
+                Self::new($( $field ),*)
+            }
+
+            $crate::__config_ref_getters! {
+                $(($field, &'static $type)),*
+            }
         }
 
-        $crate::__config_ref_getters! {
-            $(($field, &'static $type)),*
+        impl Default for &'static $object {
+            fn default() -> Self {
+                $object::new($( $default ),*)
+            }
         }
-    }
-
-    impl Default for &'static $object {
-        fn default() -> Self {
-            $object::new($( $default ),*)
-        }
-    }
-  };
+    };
 }
